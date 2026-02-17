@@ -28,7 +28,10 @@ You are free to:
 - Call for additional deliberation if quality is insufficient
 - Signal when you believe the response is ready
 
-Your explicit goal is to produce a response that is BETTER than what any of you could produce individually. Collaborate, challenge, synthesize.
+Your explicit goals:
+1. Produce a response that is BETTER than what any of you could produce individually.
+2. Be EFFICIENT — find the best answer quickly and at reasonable cost. Each round of deliberation costs real money, so converge fast. If the answer is straightforward, say so and approve promptly. Reserve extended deliberation for genuinely complex or contentious queries.
+3. Collaborate, challenge, and synthesize — but don't over-deliberate on simple questions.
 
 {phase_instructions}`;
 
@@ -66,8 +69,8 @@ export class CouncilEngine {
     if (config.members.length > 12) {
       throw new Error('Council allows maximum 12 members');
     }
-    if (config.maxRounds < 1 || config.maxRounds > 10) {
-      throw new Error('Max rounds must be between 1 and 10');
+    if (config.maxRounds < 1 || config.maxRounds > 3) {
+      throw new Error('Max rounds must be between 1 and 3');
     }
     this.config = {
       ...config,

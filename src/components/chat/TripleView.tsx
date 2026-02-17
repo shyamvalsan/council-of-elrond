@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { ResponsePanel } from './ResponsePanel';
 import { ModelSelector } from './ModelSelector';
 import { CouncilConfig } from './CouncilConfig';
@@ -11,7 +11,45 @@ import { useCouncil } from '@/hooks/useCouncil';
 import { useJudgment } from '@/hooks/useJudgment';
 import { getModelDisplayName } from '@/lib/llm/models';
 import type { Message } from '@/types/chat';
+import type { CouncilStreamEvent } from '@/types/council';
 import { DEFAULT_MODEL_A, DEFAULT_MODEL_B, DEFAULT_COUNCIL_MEMBERS } from '@/types/models';
+
+/**
+ * Build a live markdown view from the council transcript events
+ * so users can watch the deliberation unfold in real-time.
+ */
+function buildLiveDeliberation(events: CouncilStreamEvent[], currentPhase: string | null): string {
+  if (events.length === 0 && !currentPhase) return '';
+
+  const parts: string[] = [];
+  let lastPhase = '';
+
+  for (const event of events) {
+    if (event.type === 'phase') {
+      const phaseLabel = event.phase.toUpperCase();
+      const roundSuffix = event.round ? ` — Round ${event.round}` : '';
+      const heading = `**${phaseLabel}${roundSuffix}**`;
+      if (heading !== lastPhase) {
+        parts.push(`\n${heading}\n`);
+        lastPhase = heading;
+      }
+    } else if (event.type === 'member_response') {
+      const name = getModelDisplayName(event.modelId);
+      // Truncate long responses for the live view
+      const content = event.content.length > 300
+        ? event.content.slice(0, 300) + '...'
+        : event.content;
+      parts.push(`> **${name}:** ${content}\n`);
+    } else if (event.type === 'synthesis') {
+      const content = event.content.length > 400
+        ? event.content.slice(0, 400) + '...'
+        : event.content;
+      parts.push(`**Synthesis (Round ${event.round}):**\n\n${content}\n`);
+    }
+  }
+
+  return parts.join('\n');
+}
 
 interface TripleViewProps {
   messages: Message[];
@@ -22,7 +60,7 @@ export function TripleView({ messages }: TripleViewProps) {
   const [modelA, setModelA] = useState(DEFAULT_MODEL_A);
   const [modelB, setModelB] = useState(DEFAULT_MODEL_B);
   const [councilMembers, setCouncilMembers] = useState(DEFAULT_COUNCIL_MEMBERS);
-  const [maxRounds, setMaxRounds] = useState(3);
+  const [maxRounds, setMaxRounds] = useState(1);
   const [synthesizerStrategy, setSynthesizerStrategy] = useState<'round-robin' | 'voted' | 'fixed'>('round-robin');
 
   // Chat hooks for Model A and Model B
@@ -72,6 +110,12 @@ export function TripleView({ messages }: TripleViewProps) {
     !council.isDeliberating &&
     chatA.messages.length > 0 &&
     council.finalResponse !== null;
+
+  // Build live deliberation content for streaming view
+  const liveDeliberation = useMemo(
+    () => buildLiveDeliberation(council.transcript, council.currentPhase),
+    [council.transcript, council.currentPhase]
+  );
 
   // Get latest assistant messages
   const latestA = chatA.messages.filter((m) => m.role === 'assistant').pop();
@@ -124,13 +168,7 @@ export function TripleView({ messages }: TripleViewProps) {
           title="The Council"
           content={council.finalResponse}
           isStreaming={council.isDeliberating}
-          streamingContent={
-            council.currentPhase
-              ? `Deliberating... Phase: ${council.currentPhase}${
-                  council.currentRound ? ` (Round ${council.currentRound})` : ''
-                }`
-              : ''
-          }
+          streamingContent={liveDeliberation}
           tokenCount={council.stats?.tokens ?? null}
           costUsd={council.stats?.cost ?? null}
           latencyMs={council.stats?.latencyMs ?? null}

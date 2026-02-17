@@ -116,12 +116,12 @@ export function CouncilConfig({
               </button>
               <span className="w-8 text-center text-sm font-medium">{maxRounds}</span>
               <button
-                onClick={() => onMaxRoundsChange(Math.min(10, maxRounds + 1))}
+                onClick={() => onMaxRoundsChange(Math.min(3, maxRounds + 1))}
                 className="rounded-md border p-1 hover:bg-muted"
               >
                 <Plus className="h-3 w-3" />
               </button>
-              <span className="text-xs text-muted-foreground">(1-10)</span>
+              <span className="text-xs text-muted-foreground">(1-3)</span>
             </div>
           </div>
 

@@ -36,7 +36,7 @@ export function ModelSelector({
   const displayName = selectedModel?.name || value.split('/').pop() || 'Select model';
 
   return (
-    <div className="relative" ref={dropdownRef}>
+    <div className="relative w-56" ref={dropdownRef}>
       {label && (
         <label className="mb-1 block text-xs font-medium text-muted-foreground">
           {label}

@@ -41,20 +41,20 @@ describe('CouncilEngine', () => {
             userPrompt: 'test',
             synthesizerStrategy: 'round-robin',
           })
-      ).toThrow('Max rounds must be between 1 and 10');
+      ).toThrow('Max rounds must be between 1 and 3');
     });
 
-    it('should throw if maxRounds > 10', () => {
+    it('should throw if maxRounds > 3', () => {
       expect(
         () =>
           new CouncilEngine({
             members: ['a', 'b', 'c'],
-            maxRounds: 11,
+            maxRounds: 4,
             convergenceThreshold: 1.0,
             userPrompt: 'test',
             synthesizerStrategy: 'round-robin',
           })
-      ).toThrow('Max rounds must be between 1 and 10');
+      ).toThrow('Max rounds must be between 1 and 3');
     });
 
     it('should accept valid configuration', () => {
