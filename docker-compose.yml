@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  # Main Next.js application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=file:./dev.db
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - CREDIT_POOL_ENABLED=${CREDIT_POOL_ENABLED:-true}
+      - CREDIT_POOL_DAILY_LIMIT_PER_USER=${CREDIT_POOL_DAILY_LIMIT_PER_USER:-0.50}
+      - CREDIT_POOL_MAX_PER_REQUEST=${CREDIT_POOL_MAX_PER_REQUEST:-0.25}
+      - CREDIT_POOL_MAX_COUNCIL_MEMBERS=${CREDIT_POOL_MAX_COUNCIL_MEMBERS:-5}
+      - CREDIT_POOL_LOW_BALANCE_THRESHOLD=${CREDIT_POOL_LOW_BALANCE_THRESHOLD:-10}
+      - LEADERBOARD_API_URL=http://leaderboard:4000/api/v1
+      - LEADERBOARD_SUBMIT_ENABLED=true
+      - NEXT_PUBLIC_APP_URL=http://localhost:3000
+    depends_on:
+      - leaderboard
+    restart: unless-stopped
+
+  # Leaderboard API server
+  leaderboard:
+    build:
+      context: ./leaderboard
+      dockerfile: Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      - DATABASE_URL=postgresql://council:council@leaderboard-db:5432/leaderboard
+      - PORT=4000
+      - API_KEY=${LEADERBOARD_API_KEY:-dev-key}
+    depends_on:
+      leaderboard-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Leaderboard PostgreSQL database
+  leaderboard-db:
+    image: postgres:16-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_USER=council
+      - POSTGRES_PASSWORD=council
+      - POSTGRES_DB=leaderboard
+    volumes:
+      - leaderboard-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U council -d leaderboard"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  leaderboard-data:

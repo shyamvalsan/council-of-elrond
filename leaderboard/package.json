@@ -1,0 +1,31 @@
+{
+  "name": "council-of-elrond-leaderboard",
+  "version": "0.1.0",
+  "description": "Public leaderboard API server for Council of Elrond",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server/index.ts",
+    "build": "tsc",
+    "start": "node dist/server/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "db:push": "drizzle-kit push",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  },
+  "dependencies": {
+    "hono": "^4.4.0",
+    "@hono/node-server": "^1.11.0",
+    "drizzle-orm": "^0.31.0",
+    "postgres": "^3.4.4",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "tsx": "^4.15.0",
+    "vitest": "^1.6.0",
+    "drizzle-kit": "^0.22.0",
+    "@types/node": "^20.14.0"
+  }
+}
