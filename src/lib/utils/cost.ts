@@ -27,35 +27,24 @@ export function estimateRequestCost(
 }
 
 /**
- * Estimate total council cost.
+ * Estimate total council cost based on context budget.
+ * In free-form deliberation, the budget determines total token usage.
  */
 export function estimateCouncilCost(
   models: ModelInfo[],
   promptTokens: number,
-  maxRounds: number,
-  estimatedResponseTokens: number = 500
+  contextBudget: number
 ): number {
+  // Estimate: budget is split roughly evenly among members for completion tokens,
+  // plus each member sees the growing prompt context each turn.
+  // Rough heuristic: total cost ~ avg model cost * budget tokens
   const memberCount = models.length;
-  // Each member drafts once + critiques per round + synthesis per round
-  // Rough estimate: each member generates ~estimatedResponseTokens per phase
-  // Phases: acquaintance(1) + draft(1) + (critique + synthesis)(per round)
-  const tokensPerMemberPerRound = estimatedResponseTokens * 2; // critique + discussion
-  const synthTokensPerRound = estimatedResponseTokens;
+  const avgCompletionPerMember = contextBudget / memberCount;
 
   let totalCost = 0;
   for (const model of models) {
-    // Draft phase
-    const draftCost = calculateCost(model, promptTokens, estimatedResponseTokens);
-    // Deliberation rounds
-    const roundCost =
-      maxRounds *
-      calculateCost(model, promptTokens + estimatedResponseTokens * memberCount, tokensPerMemberPerRound);
-    totalCost += draftCost + roundCost;
+    totalCost += calculateCost(model, promptTokens, avgCompletionPerMember);
   }
-
-  // Synthesis cost (one model per round)
-  const avgModel = models[0];
-  totalCost += maxRounds * calculateCost(avgModel, promptTokens * 2, synthTokensPerRound);
 
   return totalCost;
 }

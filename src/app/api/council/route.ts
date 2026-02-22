@@ -11,9 +11,7 @@ export async function POST(request: NextRequest) {
     const body: CouncilRequestBody = await request.json();
     const {
       members,
-      maxRounds = 3,
-      convergenceThreshold = 1.0,
-      synthesizerStrategy = 'round-robin',
+      contextBudget = 16384,
       messages,
       userApiKey,
     } = body;
@@ -38,9 +36,7 @@ export async function POST(request: NextRequest) {
     const engine = new CouncilEngine(
       {
         members,
-        maxRounds,
-        convergenceThreshold,
-        synthesizerStrategy,
+        contextBudget,
         userPrompt: userMessage.content,
       },
       userKeys

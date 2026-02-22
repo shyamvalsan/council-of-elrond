@@ -2,26 +2,30 @@
 
 import { useState, useCallback, useRef } from 'react';
 import type { Message } from '@/types/chat';
-import type { CouncilStreamEvent } from '@/types/council';
+import type { CouncilStreamEvent, CompletedMessage } from '@/types/council';
 import { parseSSEStream } from '@/lib/utils/stream';
 
 interface UseCouncilOptions {
   members: string[];
-  maxRounds?: number;
-  convergenceThreshold?: number;
-  synthesizerStrategy?: 'round-robin' | 'voted' | 'fixed';
+  contextBudget?: number;
   apiKey?: string;
   onEvent?: (event: CouncilStreamEvent) => void;
   onComplete?: (response: string) => void;
   onError?: (error: Error) => void;
 }
 
+interface ActiveTurn {
+  modelId: string;
+  turnIndex: number;
+  content: string;
+}
+
 interface UseCouncilReturn {
   isDeliberating: boolean;
-  currentPhase: string | null;
-  currentRound: number;
+  completedMessages: CompletedMessage[];
+  activeTurn: ActiveTurn | null;
+  budget: { used: number; total: number } | null;
   finalResponse: string | null;
-  transcript: CouncilStreamEvent[];
   stats: { tokens: number; cost: number; latencyMs: number } | null;
   error: string | null;
   startDeliberation: (messages: Message[]) => Promise<void>;
@@ -31,9 +35,7 @@ interface UseCouncilReturn {
 export function useCouncil(options: UseCouncilOptions): UseCouncilReturn {
   const {
     members,
-    maxRounds = 3,
-    convergenceThreshold = 1.0,
-    synthesizerStrategy = 'round-robin',
+    contextBudget = 16384,
     apiKey,
     onEvent,
     onComplete,
@@ -41,21 +43,44 @@ export function useCouncil(options: UseCouncilOptions): UseCouncilReturn {
   } = options;
 
   const [isDeliberating, setIsDeliberating] = useState(false);
-  const [currentPhase, setCurrentPhase] = useState<string | null>(null);
-  const [currentRound, setCurrentRound] = useState(0);
+  const [completedMessages, setCompletedMessages] = useState<CompletedMessage[]>([]);
+  const [activeTurn, setActiveTurn] = useState<ActiveTurn | null>(null);
+  const [budget, setBudget] = useState<{ used: number; total: number } | null>(null);
   const [finalResponse, setFinalResponse] = useState<string | null>(null);
-  const [transcript, setTranscript] = useState<CouncilStreamEvent[]>([]);
   const [stats, setStats] = useState<{ tokens: number; cost: number; latencyMs: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
+  // Accumulate streaming content in a ref; flush to state on a throttle
+  const contentRef = useRef('');
+  const throttleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const currentTurnMetaRef = useRef<{ modelId: string; turnIndex: number } | null>(null);
+
+  const flushContent = useCallback(() => {
+    throttleRef.current = null;
+    if (currentTurnMetaRef.current) {
+      setActiveTurn({
+        ...currentTurnMetaRef.current,
+        content: contentRef.current,
+      });
+    }
+  }, []);
+
+  const scheduleFlush = useCallback(() => {
+    if (throttleRef.current === null) {
+      throttleRef.current = setTimeout(flushContent, 16); // ~60fps
+    }
+  }, [flushContent]);
+
   const startDeliberation = useCallback(
     async (messages: Message[]) => {
       setIsDeliberating(true);
-      setCurrentPhase(null);
-      setCurrentRound(0);
+      setCompletedMessages([]);
+      setActiveTurn(null);
+      contentRef.current = '';
+      currentTurnMetaRef.current = null;
+      setBudget(null);
       setFinalResponse(null);
-      setTranscript([]);
       setStats(null);
       setError(null);
 
@@ -67,9 +92,7 @@ export function useCouncil(options: UseCouncilOptions): UseCouncilReturn {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             members,
-            maxRounds,
-            convergenceThreshold,
-            synthesizerStrategy,
+            contextBudget,
             messages,
             userApiKey: apiKey,
           }),
@@ -82,22 +105,60 @@ export function useCouncil(options: UseCouncilOptions): UseCouncilReturn {
         }
 
         for await (const event of parseSSEStream<CouncilStreamEvent>(response)) {
-          setTranscript((prev) => [...prev, event]);
           onEvent?.(event);
 
           switch (event.type) {
-            case 'phase':
-              setCurrentPhase(event.phase);
-              if (event.round) setCurrentRound(event.round);
+            case 'turn_start':
+              contentRef.current = '';
+              currentTurnMetaRef.current = {
+                modelId: event.modelId,
+                turnIndex: event.turnIndex,
+              };
+              setActiveTurn({
+                modelId: event.modelId,
+                turnIndex: event.turnIndex,
+                content: '',
+              });
               break;
-            case 'converged':
+
+            case 'turn_delta':
+              contentRef.current += event.content;
+              scheduleFlush();
+              break;
+
+            case 'turn_end': {
+              // Cancel any pending throttled flush
+              if (throttleRef.current !== null) {
+                clearTimeout(throttleRef.current);
+                throttleRef.current = null;
+              }
+              // Capture content before clearing refs
+              const finishedContent = contentRef.current;
+              contentRef.current = '';
+              currentTurnMetaRef.current = null;
+              // Single atomic state update: clear active turn + append completed message
+              setActiveTurn(null);
+              setCompletedMessages((prev) => [
+                ...prev,
+                {
+                  modelId: event.modelId,
+                  content: finishedContent,
+                  tokens: event.tokens,
+                  cost: event.cost,
+                },
+              ]);
+              break;
+            }
+
+            case 'final_answer':
               setFinalResponse(event.response);
               onComplete?.(event.response);
               break;
-            case 'max_rounds':
-              setFinalResponse(event.response);
-              onComplete?.(event.response);
+
+            case 'budget':
+              setBudget({ used: event.used, total: event.total });
               break;
+
             case 'stats':
               setStats({
                 tokens: event.tokens,
@@ -105,6 +166,7 @@ export function useCouncil(options: UseCouncilOptions): UseCouncilReturn {
                 latencyMs: event.latencyMs,
               });
               break;
+
             case 'error':
               setError(event.message);
               break;
@@ -117,28 +179,40 @@ export function useCouncil(options: UseCouncilOptions): UseCouncilReturn {
         onError?.(err instanceof Error ? err : new Error(errorMessage));
       } finally {
         setIsDeliberating(false);
+        contentRef.current = '';
+        currentTurnMetaRef.current = null;
+        if (throttleRef.current !== null) {
+          clearTimeout(throttleRef.current);
+          throttleRef.current = null;
+        }
       }
     },
-    [members, maxRounds, convergenceThreshold, synthesizerStrategy, apiKey, onEvent, onComplete, onError]
+    [members, contextBudget, apiKey, onEvent, onComplete, onError, scheduleFlush]
   );
 
   const reset = useCallback(() => {
     abortRef.current?.abort();
     setIsDeliberating(false);
-    setCurrentPhase(null);
-    setCurrentRound(0);
+    setCompletedMessages([]);
+    setActiveTurn(null);
+    contentRef.current = '';
+    currentTurnMetaRef.current = null;
+    setBudget(null);
     setFinalResponse(null);
-    setTranscript([]);
     setStats(null);
     setError(null);
+    if (throttleRef.current !== null) {
+      clearTimeout(throttleRef.current);
+      throttleRef.current = null;
+    }
   }, []);
 
   return {
     isDeliberating,
-    currentPhase,
-    currentRound,
+    completedMessages,
+    activeTurn,
+    budget,
     finalResponse,
-    transcript,
     stats,
     error,
     startDeliberation,

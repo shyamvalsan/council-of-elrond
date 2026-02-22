@@ -5,11 +5,9 @@ import { CouncilConfig } from '@/components/chat/CouncilConfig';
 describe('CouncilConfig', () => {
   const defaultProps = {
     members: ['anthropic/claude-opus-4-6', 'openai/gpt-5-2', 'google/gemini-3-pro-preview'],
-    maxRounds: 3,
-    synthesizerStrategy: 'round-robin' as const,
+    contextBudget: 16384,
     onMembersChange: vi.fn(),
-    onMaxRoundsChange: vi.fn(),
-    onStrategyChange: vi.fn(),
+    onContextBudgetChange: vi.fn(),
   };
 
   it('should render the settings button', () => {
@@ -29,25 +27,22 @@ describe('CouncilConfig', () => {
     expect(screen.getByText('Members (3/12, min 3)')).toBeInTheDocument();
   });
 
-  it('should show current max rounds', () => {
+  it('should show context budget slider', () => {
     render(<CouncilConfig {...defaultProps} />);
     fireEvent.click(screen.getByRole('button', { name: /council settings/i }));
-    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.getByText('Context Budget')).toBeInTheDocument();
+    expect(screen.getByRole('slider')).toBeInTheDocument();
   });
 
-  it('should call onMaxRoundsChange when rounds are adjusted', () => {
-    const onMaxRoundsChange = vi.fn();
+  it('should call onContextBudgetChange when slider is adjusted', () => {
+    const onContextBudgetChange = vi.fn();
     render(
-      <CouncilConfig {...defaultProps} onMaxRoundsChange={onMaxRoundsChange} />
+      <CouncilConfig {...defaultProps} onContextBudgetChange={onContextBudgetChange} />
     );
     fireEvent.click(screen.getByRole('button', { name: /council settings/i }));
 
-    // Find the minus button (first one after the round label)
-    const buttons = screen.getAllByRole('button');
-    const minusButton = buttons.find((b) => b.querySelector('.lucide-minus'));
-    if (minusButton) {
-      fireEvent.click(minusButton);
-      expect(onMaxRoundsChange).toHaveBeenCalledWith(2);
-    }
+    const slider = screen.getByRole('slider');
+    fireEvent.change(slider, { target: { value: '2' } });
+    expect(onContextBudgetChange).toHaveBeenCalledWith(24576);
   });
 });

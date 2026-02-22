@@ -17,13 +17,13 @@ export function estimateTripleViewCost(
   modelA: ModelInfo,
   modelB: ModelInfo,
   councilModels: ModelInfo[],
-  maxRounds: number = 3
+  contextBudget: number = 16384
 ): CostEstimate {
   const promptTokens = estimateTokens(prompt);
 
   const modelACost = estimateRequestCost(modelA, promptTokens);
   const modelBCost = estimateRequestCost(modelB, promptTokens);
-  const councilCost = estimateCouncilCost(councilModels, promptTokens, maxRounds);
+  const councilCost = estimateCouncilCost(councilModels, promptTokens, contextBudget);
 
   return {
     modelACost,

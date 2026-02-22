@@ -1,26 +1,29 @@
 'use client';
 
 import { useState } from 'react';
-import { Settings, Plus, X, Minus } from 'lucide-react';
+import { Settings, X } from 'lucide-react';
 import { useModels } from '@/hooks/useModels';
-import { DEFAULT_COUNCIL_MEMBERS } from '@/types/models';
+
+const BUDGET_STEPS = [8192, 16384, 24576, 32768];
+const BUDGET_LABELS: Record<number, string> = {
+  8192: '8K',
+  16384: '16K',
+  24576: '24K',
+  32768: '32K',
+};
 
 interface CouncilConfigProps {
   members: string[];
-  maxRounds: number;
-  synthesizerStrategy: 'round-robin' | 'voted' | 'fixed';
+  contextBudget: number;
   onMembersChange: (members: string[]) => void;
-  onMaxRoundsChange: (rounds: number) => void;
-  onStrategyChange: (strategy: 'round-robin' | 'voted' | 'fixed') => void;
+  onContextBudgetChange: (budget: number) => void;
 }
 
 export function CouncilConfig({
   members,
-  maxRounds,
-  synthesizerStrategy,
+  contextBudget,
   onMembersChange,
-  onMaxRoundsChange,
-  onStrategyChange,
+  onContextBudgetChange,
 }: CouncilConfigProps) {
   const [open, setOpen] = useState(false);
   const { models } = useModels();
@@ -37,6 +40,9 @@ export function CouncilConfig({
   };
 
   const availableToAdd = models.filter((m) => !members.includes(m.id));
+
+  const budgetIndex = BUDGET_STEPS.indexOf(contextBudget);
+  const sliderValue = budgetIndex >= 0 ? budgetIndex : 1;
 
   return (
     <div className="relative">
@@ -102,45 +108,33 @@ export function CouncilConfig({
             )}
           </div>
 
-          {/* Max Rounds */}
+          {/* Context Budget */}
           <div className="mb-4">
             <label className="mb-1 block text-xs font-medium">
-              Max Deliberation Rounds
+              Context Budget
             </label>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => onMaxRoundsChange(Math.max(1, maxRounds - 1))}
-                className="rounded-md border p-1 hover:bg-muted"
-              >
-                <Minus className="h-3 w-3" />
-              </button>
-              <span className="w-8 text-center text-sm font-medium">{maxRounds}</span>
-              <button
-                onClick={() => onMaxRoundsChange(Math.min(3, maxRounds + 1))}
-                className="rounded-md border p-1 hover:bg-muted"
-              >
-                <Plus className="h-3 w-3" />
-              </button>
-              <span className="text-xs text-muted-foreground">(1-3)</span>
+            <input
+              type="range"
+              min={0}
+              max={BUDGET_STEPS.length - 1}
+              step={1}
+              value={sliderValue}
+              onChange={(e) => {
+                const idx = parseInt(e.target.value, 10);
+                onContextBudgetChange(BUDGET_STEPS[idx]);
+              }}
+              className="w-full accent-primary"
+            />
+            <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+              {BUDGET_STEPS.map((step) => (
+                <span
+                  key={step}
+                  className={step === contextBudget ? 'font-semibold text-primary' : ''}
+                >
+                  {BUDGET_LABELS[step]}
+                </span>
+              ))}
             </div>
-          </div>
-
-          {/* Synthesizer Strategy */}
-          <div className="mb-4">
-            <label className="mb-1 block text-xs font-medium">
-              Synthesizer Strategy
-            </label>
-            <select
-              value={synthesizerStrategy}
-              onChange={(e) =>
-                onStrategyChange(e.target.value as typeof synthesizerStrategy)
-              }
-              className="w-full rounded-md border bg-background px-2 py-1 text-xs"
-            >
-              <option value="round-robin">Round Robin</option>
-              <option value="voted">Voted</option>
-              <option value="fixed">Fixed (first member)</option>
-            </select>
           </div>
 
           <button

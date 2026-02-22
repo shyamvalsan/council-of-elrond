@@ -3,7 +3,7 @@ import { CouncilEngine } from '@/lib/llm/council';
 import type { CouncilStreamEvent } from '@/types/council';
 
 describe('Council Full Flow Integration', () => {
-  it('should complete a full 3-member, 1-round council deliberation', async () => {
+  it('should complete a full 3-member council deliberation', async () => {
     const engine = new CouncilEngine(
       {
         members: [
@@ -11,10 +11,8 @@ describe('Council Full Flow Integration', () => {
           'openai/gpt-5-2',
           'google/gemini-3-pro-preview',
         ],
-        maxRounds: 1,
-        convergenceThreshold: 1.0,
+        contextBudget: 16384,
         userPrompt: 'Explain quantum computing in simple terms',
-        synthesizerStrategy: 'round-robin',
       },
       { openrouter: 'sk-or-test' }
     );
@@ -26,7 +24,7 @@ describe('Council Full Flow Integration', () => {
     for await (const event of engine.deliberate()) {
       events.push(event);
 
-      if (event.type === 'converged' || event.type === 'max_rounds') {
+      if (event.type === 'final_answer') {
         finalResponse = event.response;
       }
       if (event.type === 'stats') {
@@ -39,16 +37,13 @@ describe('Council Full Flow Integration', () => {
     expect(finalResponse.length).toBeGreaterThan(0);
     expect(totalTokens).toBeGreaterThan(0);
 
-    // Verify all phases were hit
-    const phases = events
-      .filter((e): e is { type: 'phase'; phase: string } => e.type === 'phase')
-      .map((e) => e.phase);
+    // Verify budget events were emitted
+    const budgetEvents = events.filter((e) => e.type === 'budget');
+    expect(budgetEvents.length).toBeGreaterThan(0);
 
-    expect(phases).toContain('acquaintance');
-    expect(phases).toContain('draft');
-    expect(phases).toContain('critique');
-    expect(phases).toContain('synthesis');
-    expect(phases).toContain('approval');
+    // Verify turn events for each model
+    const turnStarts = events.filter((e) => e.type === 'turn_start');
+    expect(turnStarts.length).toBeGreaterThanOrEqual(3);
   }, 30000);
 
   it('should track member statistics', async () => {
@@ -59,10 +54,8 @@ describe('Council Full Flow Integration', () => {
           'openai/gpt-5-2',
           'google/gemini-3-pro-preview',
         ],
-        maxRounds: 1,
-        convergenceThreshold: 1.0,
+        contextBudget: 16384,
         userPrompt: 'Hello',
-        synthesizerStrategy: 'round-robin',
       },
       { openrouter: 'sk-or-test' }
     );
@@ -75,20 +68,17 @@ describe('Council Full Flow Integration', () => {
     expect(Object.keys(result.memberStats).length).toBe(3);
   }, 30000);
 
-  it('should handle different synthesizer strategies', async () => {
-    for (const strategy of ['round-robin', 'fixed', 'voted'] as const) {
+  it('should handle different budget sizes', async () => {
+    for (const budget of [8192, 16384, 32768]) {
       const engine = new CouncilEngine(
         {
           members: ['model-a', 'model-b', 'model-c'],
-          maxRounds: 2,
-          convergenceThreshold: 1.0,
+          contextBudget: budget,
           userPrompt: 'Test',
-          synthesizerStrategy: strategy,
         },
         { openrouter: 'sk-or-test' }
       );
 
-      // Just verify it doesn't throw
       const events: CouncilStreamEvent[] = [];
       for await (const event of engine.deliberate()) {
         events.push(event);

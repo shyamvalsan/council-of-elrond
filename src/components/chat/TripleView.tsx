@@ -1,55 +1,17 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { ResponsePanel } from './ResponsePanel';
+import { useState, useEffect, useRef } from 'react';
+import { PromptBanner } from './PromptBanner';
+import { CompactResponseCard } from './CompactResponseCard';
+import { CouncilPanel } from './CouncilPanel';
 import { ModelSelector } from './ModelSelector';
-import { CouncilConfig } from './CouncilConfig';
 import { JudgmentBar } from './JudgmentBar';
-import { DeliberationTranscript } from './DeliberationTranscript';
 import { useChat } from '@/hooks/useChat';
 import { useCouncil } from '@/hooks/useCouncil';
 import { useJudgment } from '@/hooks/useJudgment';
 import { getModelDisplayName } from '@/lib/llm/models';
 import type { Message } from '@/types/chat';
-import type { CouncilStreamEvent } from '@/types/council';
 import { DEFAULT_MODEL_A, DEFAULT_MODEL_B, DEFAULT_COUNCIL_MEMBERS } from '@/types/models';
-
-/**
- * Build a live markdown view from the council transcript events
- * so users can watch the deliberation unfold in real-time.
- */
-function buildLiveDeliberation(events: CouncilStreamEvent[], currentPhase: string | null): string {
-  if (events.length === 0 && !currentPhase) return '';
-
-  const parts: string[] = [];
-  let lastPhase = '';
-
-  for (const event of events) {
-    if (event.type === 'phase') {
-      const phaseLabel = event.phase.toUpperCase();
-      const roundSuffix = event.round ? ` — Round ${event.round}` : '';
-      const heading = `**${phaseLabel}${roundSuffix}**`;
-      if (heading !== lastPhase) {
-        parts.push(`\n${heading}\n`);
-        lastPhase = heading;
-      }
-    } else if (event.type === 'member_response') {
-      const name = getModelDisplayName(event.modelId);
-      // Truncate long responses for the live view
-      const content = event.content.length > 300
-        ? event.content.slice(0, 300) + '...'
-        : event.content;
-      parts.push(`> **${name}:** ${content}\n`);
-    } else if (event.type === 'synthesis') {
-      const content = event.content.length > 400
-        ? event.content.slice(0, 400) + '...'
-        : event.content;
-      parts.push(`**Synthesis (Round ${event.round}):**\n\n${content}\n`);
-    }
-  }
-
-  return parts.join('\n');
-}
 
 interface TripleViewProps {
   messages: Message[];
@@ -60,8 +22,7 @@ export function TripleView({ messages }: TripleViewProps) {
   const [modelA, setModelA] = useState(DEFAULT_MODEL_A);
   const [modelB, setModelB] = useState(DEFAULT_MODEL_B);
   const [councilMembers, setCouncilMembers] = useState(DEFAULT_COUNCIL_MEMBERS);
-  const [maxRounds, setMaxRounds] = useState(1);
-  const [synthesizerStrategy, setSynthesizerStrategy] = useState<'round-robin' | 'voted' | 'fixed'>('round-robin');
+  const [contextBudget, setContextBudget] = useState(16384);
 
   // Chat hooks for Model A and Model B
   const chatA = useChat({ model: modelA });
@@ -70,8 +31,7 @@ export function TripleView({ messages }: TripleViewProps) {
   // Council hook
   const council = useCouncil({
     members: councilMembers,
-    maxRounds,
-    synthesizerStrategy,
+    contextBudget,
   });
 
   // Judgment hook
@@ -100,10 +60,6 @@ export function TripleView({ messages }: TripleViewProps) {
   }, [messages.length]);
 
   // Determine if responses are ready for voting
-  const hasResponses =
-    (chatA.messages.length > 0 || chatA.streamingContent) &&
-    (chatB.messages.length > 0 || chatB.streamingContent) &&
-    (council.finalResponse || council.isDeliberating);
   const canVote =
     !chatA.isStreaming &&
     !chatB.isStreaming &&
@@ -111,81 +67,72 @@ export function TripleView({ messages }: TripleViewProps) {
     chatA.messages.length > 0 &&
     council.finalResponse !== null;
 
-  // Build live deliberation content for streaming view
-  const liveDeliberation = useMemo(
-    () => buildLiveDeliberation(council.transcript, council.currentPhase),
-    [council.transcript, council.currentPhase]
-  );
-
   // Get latest assistant messages
   const latestA = chatA.messages.filter((m) => m.role === 'assistant').pop();
   const latestB = chatB.messages.filter((m) => m.role === 'assistant').pop();
 
+  // Get the last user message for the prompt banner
+  const lastUserMsg = messages.filter((m) => m.role === 'user').pop();
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      {/* Three columns */}
-      <div className="grid flex-1 grid-cols-1 gap-4 overflow-hidden p-4 md:grid-cols-3">
-        {/* Model A */}
-        <ResponsePanel
-          title={getModelDisplayName(modelA)}
-          content={latestA?.content ?? null}
-          isStreaming={chatA.isStreaming}
-          streamingContent={chatA.streamingContent}
-          tokenCount={chatA.usage?.total_tokens ?? null}
-          costUsd={null}
-          latencyMs={null}
-          error={chatA.error}
-          headerActions={
-            <ModelSelector
-              value={modelA}
-              onChange={setModelA}
-              label="Model A"
-            />
-          }
-        />
+      {/* Sticky prompt banner */}
+      <PromptBanner prompt={lastUserMsg?.content ?? null} />
 
-        {/* Model B */}
-        <ResponsePanel
-          title={getModelDisplayName(modelB)}
-          content={latestB?.content ?? null}
-          isStreaming={chatB.isStreaming}
-          streamingContent={chatB.streamingContent}
-          tokenCount={chatB.usage?.total_tokens ?? null}
-          costUsd={null}
-          latencyMs={null}
-          error={chatB.error}
-          headerActions={
-            <ModelSelector
-              value={modelB}
-              onChange={setModelB}
-              label="Model B"
-            />
-          }
-        />
+      {/* Scrollable content area */}
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+        {/* Model A & B compact row */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <CompactResponseCard
+            title={getModelDisplayName(modelA)}
+            content={latestA?.content ?? null}
+            isStreaming={chatA.isStreaming}
+            streamingContent={chatA.streamingContent}
+            tokenCount={chatA.usage?.total_tokens ?? null}
+            costUsd={null}
+            latencyMs={null}
+            error={chatA.error}
+            headerActions={
+              <ModelSelector
+                value={modelA}
+                onChange={setModelA}
+                label="Model A"
+              />
+            }
+          />
 
-        {/* Council */}
-        <ResponsePanel
-          title="The Council"
-          content={council.finalResponse}
-          isStreaming={council.isDeliberating}
-          streamingContent={liveDeliberation}
-          tokenCount={council.stats?.tokens ?? null}
-          costUsd={council.stats?.cost ?? null}
-          latencyMs={council.stats?.latencyMs ?? null}
+          <CompactResponseCard
+            title={getModelDisplayName(modelB)}
+            content={latestB?.content ?? null}
+            isStreaming={chatB.isStreaming}
+            streamingContent={chatB.streamingContent}
+            tokenCount={chatB.usage?.total_tokens ?? null}
+            costUsd={null}
+            latencyMs={null}
+            error={chatB.error}
+            headerActions={
+              <ModelSelector
+                value={modelB}
+                onChange={setModelB}
+                label="Model B"
+              />
+            }
+          />
+        </div>
+
+        {/* Council panel - hero section */}
+        <CouncilPanel
+          finalResponse={council.finalResponse}
+          isDeliberating={council.isDeliberating}
+          completedMessages={council.completedMessages}
+          activeTurn={council.activeTurn}
+          budget={council.budget}
+          stats={council.stats}
           error={council.error}
-          headerActions={
-            <CouncilConfig
-              members={councilMembers}
-              maxRounds={maxRounds}
-              synthesizerStrategy={synthesizerStrategy}
-              onMembersChange={setCouncilMembers}
-              onMaxRoundsChange={setMaxRounds}
-              onStrategyChange={setSynthesizerStrategy}
-            />
-          }
-          footer={
-            <DeliberationTranscript events={council.transcript} />
-          }
+          councilMembers={councilMembers}
+          contextBudget={contextBudget}
+          onMembersChange={setCouncilMembers}
+          onContextBudgetChange={setContextBudget}
         />
       </div>
 

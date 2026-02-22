@@ -16,7 +16,7 @@ interface UserSettings {
   defaultModelA: string;
   defaultModelB: string;
   defaultCouncilMembers: string[];
-  maxRounds: number;
+  contextBudget: number;
   showTranscript: boolean;
   submitToLeaderboard: boolean;
   theme: 'light' | 'dark' | 'system';
@@ -34,7 +34,7 @@ const DEFAULT_SETTINGS: UserSettings = {
     'openai/gpt-5-2',
     'google/gemini-3-pro-preview',
   ],
-  maxRounds: 3,
+  contextBudget: 16384,
   showTranscript: false,
   submitToLeaderboard: true,
   theme: 'system',
@@ -131,15 +131,17 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
             <h3 className="mb-2 text-sm font-medium">Council Settings</h3>
             <div className="space-y-3">
               <div>
-                <label className="mb-1 block text-xs font-medium">Max Deliberation Rounds</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={10}
-                  value={settings.maxRounds}
-                  onChange={(e) => updateSetting('maxRounds', parseInt(e.target.value, 10))}
-                  className="w-20 rounded-md border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                />
+                <label className="mb-1 block text-xs font-medium">Default Context Budget</label>
+                <select
+                  value={settings.contextBudget}
+                  onChange={(e) => updateSetting('contextBudget', parseInt(e.target.value, 10))}
+                  className="rounded-md border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value={8192}>8K tokens</option>
+                  <option value={16384}>16K tokens</option>
+                  <option value={24576}>24K tokens</option>
+                  <option value={32768}>32K tokens</option>
+                </select>
               </div>
               <label className="flex items-center gap-2 text-sm">
                 <input

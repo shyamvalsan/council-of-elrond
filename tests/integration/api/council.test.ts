@@ -11,10 +11,8 @@ describe('Council API Integration', () => {
           'openai/gpt-5-2',
           'google/gemini-3-pro-preview',
         ],
-        maxRounds: 1,
-        convergenceThreshold: 1.0,
+        contextBudget: 16384,
         userPrompt: 'What is 2+2?',
-        synthesizerStrategy: 'round-robin',
       },
       { openrouter: 'sk-or-test' }
     );
@@ -24,33 +22,20 @@ describe('Council API Integration', () => {
       events.push(event);
     }
 
-    // Verify all expected phase types occurred
-    const phaseTypes = events
-      .filter((e) => e.type === 'phase')
-      .map((e) => (e as { type: 'phase'; phase: string }).phase);
+    // Should have turn events
+    const turnStarts = events.filter((e) => e.type === 'turn_start');
+    expect(turnStarts.length).toBeGreaterThan(0);
 
-    expect(phaseTypes).toContain('acquaintance');
-    expect(phaseTypes).toContain('draft');
-    expect(phaseTypes).toContain('critique');
-    expect(phaseTypes).toContain('synthesis');
-    expect(phaseTypes).toContain('approval');
-
-    // Should have a final event
-    const lastEvent = events[events.length - 1];
-    expect(
-      lastEvent.type === 'converged' || lastEvent.type === 'max_rounds'
-    ).toBe(true);
-
-    // Should have member responses
-    const memberResponses = events.filter((e) => e.type === 'member_response');
-    expect(memberResponses.length).toBeGreaterThan(0);
+    // Should have a final answer
+    const finalAnswers = events.filter((e) => e.type === 'final_answer');
+    expect(finalAnswers.length).toBe(1);
 
     // Should have stats
     const statsEvents = events.filter((e) => e.type === 'stats');
     expect(statsEvents.length).toBe(1);
   }, 30000);
 
-  it('should handle 1-round council', async () => {
+  it('should handle small budget council', async () => {
     const engine = new CouncilEngine(
       {
         members: [
@@ -58,10 +43,8 @@ describe('Council API Integration', () => {
           'openai/gpt-5-2',
           'google/gemini-3-pro-preview',
         ],
-        maxRounds: 1,
-        convergenceThreshold: 1.0,
+        contextBudget: 8192,
         userPrompt: 'Hello',
-        synthesizerStrategy: 'fixed',
       },
       { openrouter: 'sk-or-test' }
     );
@@ -71,9 +54,7 @@ describe('Council API Integration', () => {
       events.push(event);
     }
 
-    const lastEvent = events[events.length - 1];
-    expect(
-      lastEvent.type === 'converged' || lastEvent.type === 'max_rounds'
-    ).toBe(true);
+    const finalAnswers = events.filter((e) => e.type === 'final_answer');
+    expect(finalAnswers.length).toBe(1);
   }, 30000);
 });
